@@ -53,7 +53,7 @@ if not check_password():
     st.stop()
 
 # ── Header ──
-st.title("🏗️ PrintPlan AI")
+st.title("🏗️ Auto2DPrint AI")
 st.caption("PDF floor plan → continuous G-code toolpath for large-scale 3D concrete printing")
 
 # ── Sidebar: parameters ──
@@ -66,9 +66,8 @@ with st.sidebar:
     speed = st.number_input("Print speed (mm/s)", value=60.0, min_value=10.0, step=10.0)
 
     st.divider()
-    st.caption("PrintPlan AI v1.1")
+    st.caption("Auto2DPrint AI v1.1")
     st.caption("Hoang Khieu · RMIT University")
-    st.caption("CONTECH GLOBAL PTE. LTD.")
 
 # ── Main area ──
 col_upload, col_result = st.columns([1, 2])
