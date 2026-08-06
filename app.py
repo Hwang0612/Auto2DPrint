@@ -163,9 +163,8 @@ if run_clicked and pdf_file is not None:
         if m.get("scale_confidence") is not None:
             confidence_str = f", confidence: {m['scale_confidence']:.0%}, {m['scale_n_samples']} samples"
         st.code(
-            f"M1 · Ingest:   {m['segment_count']} segments, {m['total_length_m']:.1f} m\n"
-            f"    Scale: {scale_info} (method: {scale_method}{confidence_str})\n"
-            f"    Wall detection: {m.get('detection_method', '?')} ({m.get('wall_filter', '?')})\n"
+           st.code(
+            f"M1 · Ingest:   {m['segment_count']} segments, {m['total_length_m']:.1f} m, scale: {scale_info}\n"
             f"M2 · Zones:    {len(stage2.zones)} zones ({closed} closed), "
             f"{stage2.meta['total_trails']} trails/layer\n"
             f"M3 · Toolpath: {stage3.meta['n_layers']} layers, "
