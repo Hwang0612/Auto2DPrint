@@ -162,7 +162,6 @@ if run_clicked and pdf_file is not None:
         confidence_str = ""
         if m.get("scale_confidence") is not None:
             confidence_str = f", confidence: {m['scale_confidence']:.0%}, {m['scale_n_samples']} samples"
-        st.code(
            st.code(
             f"M1 · Ingest:   {m['segment_count']} segments, {m['total_length_m']:.1f} m, scale: {scale_info}\n"
             f"M2 · Zones:    {len(stage2.zones)} zones ({closed} closed), "
