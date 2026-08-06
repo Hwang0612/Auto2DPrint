@@ -158,9 +158,7 @@ if run_clicked and pdf_file is not None:
         # Log
         st.subheader("Pipeline Log")
         scale_info = m.get("drawing_scale", "?")
-        scale_method = m.get("scale_method", "?")
-        confidence_str = ""
-           st.code(
+        st.code(
             f"M1 · Ingest:   {m['segment_count']} segments, {m['total_length_m']:.1f} m, scale: {scale_info}\n"
             f"M2 · Zones:    {len(stage2.zones)} zones ({closed} closed), "
             f"{stage2.meta['total_trails']} trails/layer\n"
