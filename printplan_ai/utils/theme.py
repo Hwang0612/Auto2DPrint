@@ -198,7 +198,7 @@ def render_header(status_text: str = "Ready", status_type: str = "success"):
     html = f"""
     <div class="header-banner">
         <div>
-            <h1 class="header-title">🏗️ PrintPlan AI</h1>
+            <h1 class="header-title">🏗️ AUTO2DPRINT </h1>
             <p class="header-subtitle">Vector PDF Floor Plan &rarr; Continuous 3D Concrete Printing G-Code Pipeline</p>
         </div>
         <div>
