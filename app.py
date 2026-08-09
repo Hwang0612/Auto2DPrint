@@ -59,7 +59,7 @@ def check_password() -> bool:
 
 # ── Page Configuration ───────────────────────────────────────────
 st.set_page_config(
-    page_title="PrintPlan AI — 3D Concrete Toolpath Platform",
+    page_title="Automated Toolpath Platform of Large scale 3D Concrete Printing",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -137,9 +137,9 @@ with st.sidebar:
     run_clicked = st.button("▶ Run Full Pipeline", type="primary", use_container_width=True)
 
     st.divider()
-    st.caption("PrintPlan AI v2.0 (3D WebGL Edition)")
+    st.caption("Auto2DPrint")
     st.caption("Hoang Khieu · RMIT University")
-    st.caption("CONTECH GLOBAL PTE. LTD.")
+    
 
 
 # Initialize pipeline results in Session State
