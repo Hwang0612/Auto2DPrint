@@ -35,7 +35,7 @@ def check_password() -> bool:
     if st.session_state.authenticated:
         return True
 
-    st.markdown("<h1 style='text-align: center; color: #38bdf8;'>🏗️ PrintPlan AI</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #38bdf8;'>🏗️ AUTO2DPRINT </h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #94a3b8;'>Enter password to access 3D Concrete Printing G-Code Platform</p>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
