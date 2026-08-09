@@ -59,7 +59,7 @@ def check_password() -> bool:
 
 # ── Page Configuration ───────────────────────────────────────────
 st.set_page_config(
-    page_title="PrintPlan AI — 3D Concrete Toolpath Platform",
+    page_title="Automated Toolpath Platform  of Large Scale 3D Concrete Printing",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded",
