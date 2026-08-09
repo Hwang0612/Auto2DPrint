@@ -1,4 +1,4 @@
-"""PrintPlan AI — Streamlit Interface.
+"""AUTO2DPRINT — Streamlit Interface.
 
 Upload a vector PDF floor plan (or load built-in demo geometry) to generate
 continuous 3D concrete printing toolpaths with interactive WebGL 3D visualization,
