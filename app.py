@@ -452,5 +452,5 @@ with tab_docs:
     3. **Spatial Layer Stacking**: Multi-layer parametric height propagation with customized bead width and print speed profiles.
 
     ---
-    **Developer Note**: *Developed by Hoang Khieu (RMIT University) & CONTECH GLOBAL PTE. LTD.*
+    **Developer Note**: *Developed by Hoang Khieu - RMIT University*
     """)
