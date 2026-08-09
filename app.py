@@ -137,9 +137,9 @@ with st.sidebar:
     run_clicked = st.button("▶ Run Full Pipeline", type="primary", use_container_width=True)
 
     st.divider()
-    st.caption("PrintPlan AI v2.0 (3D WebGL Edition)")
+    st.caption("PrintPlan AI")
     st.caption("Hoang Khieu · RMIT University")
-    st.caption("CONTECH GLOBAL PTE. LTD.")
+   
 
 
 # Initialize pipeline results in Session State
