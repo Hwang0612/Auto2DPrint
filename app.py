@@ -245,7 +245,7 @@ with tab_pipeline:
         ax.set_aspect("equal")
         ax.tick_params(colors="#94a3b8")
         for spine in ax.spines.values():
-            spine.set_color("rgba(148, 163, 184, 0.3)")
+            spine.set_color("#334155")
 
         colors_list = ["#38bdf8", "#f43f5e", "#10b981", "#f59e0b", "#a855f7"]
         layer0 = stage3.layers[0]
@@ -261,7 +261,7 @@ with tab_pipeline:
                 ax.add_collection(LineCollection(segs, colors=["#64748b"], linewidths=1.0, linestyles=":", zorder=2))
 
         ax.set_title(f"Layer 0 Continuous Nozzle Strokes: {layer0.n_print_traces} Trails", color="#f8fafc", fontweight="bold", fontsize=11)
-        ax.grid(True, color="rgba(148, 163, 184, 0.15)")
+        ax.grid(True, color="#334155", alpha=0.3)
         plt.tight_layout()
         st.pyplot(fig)
         plt.close()
