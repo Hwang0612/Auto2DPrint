@@ -142,7 +142,7 @@ function mat(c,t){{
   if(!mats[k])mats[k]=new THREE.MeshStandardMaterial({{color:new THREE.Color(c),roughness:t?0.9:0.72,metalness:0,wireframe:WF&&!t,transparent:t,opacity:t?0.35:1}});
   return mats[k];
 }}
-const mkr=new THREE.Mesh(new THREE.SphereGeometry(0.01,8,8),new THREE.MeshStandardMaterial({{color:0xf59e0b,emissive:0xf59e0b,emissiveIntensity:0.5}}));
+
 async function build(){{
   for(let si=0;si<SEGS.length;si++){{
     const seg=SEGS[si];if(seg.pts.length<2)continue;
@@ -158,7 +158,7 @@ async function build(){{
           const m=new THREE.Mesh(geo,mat(seg.color,false));m.castShadow=true;m.receiveShadow=true;scene.add(m);
         }}catch(e){{}}
       }}
-      const mk=mkr.clone();mk.position.copy(p3[0]);scene.add(mk);
+     
     }}
     if(si%30===0)await new Promise(r=>setTimeout(r,0));
   }}
