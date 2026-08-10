@@ -31,15 +31,15 @@ def inject_custom_css():
         max-width: 1400px;
     }
 
-    /* Glassmorphism Header Bar */
+       /* Glassmorphism Header Bar */
     .header-banner {
-        background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
-        border: 1px solid rgba(56, 189, 248, 0.25);
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border: 1px solid #cbd5e1;
         border-radius: 12px;
         padding: 20px 24px;
         margin-bottom: 24px;
         backdrop-filter: blur(12px);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -48,7 +48,7 @@ def inject_custom_css():
     .header-title {
         font-size: 2.1rem;
         font-weight: 800;
-        background: linear-gradient(90deg, #38bdf8, #818cf8);
+        background: linear-gradient(90deg, #0284c7, #4f46e5);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
@@ -56,7 +56,7 @@ def inject_custom_css():
     }
 
     .header-subtitle {
-        color: #94a3b8;
+        color: #475569;
         font-size: 0.95rem;
         margin-top: 4px;
         margin-bottom: 0;
@@ -77,36 +77,36 @@ def inject_custom_css():
 
     .status-pill.success {
         background: rgba(16, 185, 129, 0.15);
-        color: #34d399;
-        border: 1px solid rgba(52, 211, 153, 0.4);
+        color: #059669;
+        border: 1px solid rgba(16, 185, 129, 0.4);
     }
 
     .status-pill.info {
         background: rgba(56, 189, 248, 0.15);
-        color: #38bdf8;
-        border: 1px solid rgba(56, 189, 248, 0.4);
+        color: #0284c7;
+        border: 1px solid rgba(2, 132, 199, 0.4);
     }
 
     .status-pill.warning {
         background: rgba(245, 158, 11, 0.15);
-        color: #fbbf24;
-        border: 1px solid rgba(251, 191, 36, 0.4);
+        color: #d97706;
+        border: 1px solid rgba(217, 119, 6, 0.4);
     }
 
     /* Card Panels */
     .custom-card {
-        background: rgba(15, 23, 42, 0.65);
-        border: 1px solid rgba(148, 163, 184, 0.12);
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
         border-radius: 12px;
         padding: 18px 20px;
         margin-bottom: 16px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
     }
 
     .custom-card-header {
         font-size: 1.05rem;
         font-weight: 700;
-        color: #f1f5f9;
+        color: #0f172a;
         margin-bottom: 12px;
         display: flex;
         align-items: center;
@@ -115,25 +115,24 @@ def inject_custom_css():
 
     /* Styled Metric Cards */
     div[data-testid="stMetric"] {
-        background: rgba(15, 23, 42, 0.7) !important;
-        border: 1px solid rgba(56, 189, 248, 0.18) !important;
+        background: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
         border-radius: 10px !important;
         padding: 14px 16px !important;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
     }
 
     div[data-testid="stMetricLabel"] {
-        color: #94a3b8 !important;
+        color: #475569 !important;
         font-size: 0.85rem !important;
         font-weight: 600 !important;
     }
 
     div[data-testid="stMetricValue"] {
-        color: #38bdf8 !important;
+        color: #0284c7 !important;
         font-size: 1.5rem !important;
         font-weight: 700 !important;
     }
-
     /* Navigation Radio Style */
     div[data-testid="stSidebar"] {
         background-color: #0b1120 !important;
