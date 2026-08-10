@@ -31,15 +31,15 @@ def inject_custom_css():
         max-width: 1400px;
     }
 
-       /* Glassmorphism Header Bar */
+          /* Glassmorphism Header Bar - Light Ice-Blue Gradient Tint */
     .header-banner {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        border: 1px solid #cbd5e1;
+        background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
+        border: 1px solid #bae6fd;
         border-radius: 12px;
         padding: 20px 24px;
         margin-bottom: 24px;
         backdrop-filter: blur(12px);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 4px 20px rgba(2, 132, 199, 0.08);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -48,7 +48,7 @@ def inject_custom_css():
     .header-title {
         font-size: 2.1rem;
         font-weight: 800;
-        background: linear-gradient(90deg, #0284c7, #4f46e5);
+        background: linear-gradient(90deg, #0284c7, #2563eb);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
@@ -93,14 +93,14 @@ def inject_custom_css():
         border: 1px solid rgba(217, 119, 6, 0.4);
     }
 
-    /* Card Panels */
+    /* Card Panels - Distinct Light Grey Background */
     .custom-card {
-        background: #f1f5f9;
-        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
         padding: 18px 20px;
         margin-bottom: 16px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
     }
 
     .custom-card-header {
@@ -113,13 +113,13 @@ def inject_custom_css():
         gap: 8px;
     }
 
-    /* Styled Metric Cards */
+    /* Styled Metric Cards - Pure White Card with Darker Slate Border */
     div[data-testid="stMetric"] {
-        background: #f1f5f9 !important;
+        background: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 10px !important;
         padding: 14px 16px !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
     }
 
     div[data-testid="stMetricLabel"] {
