@@ -21,18 +21,21 @@ def _point_in_opening_xy(px: float, py: float, opening, scale_pts_to_mm: float) 
     """
     Check whether a point (px, py) in world-mm coordinates lies within the
     X-Y bounding box of an opening gap.
+    Uses opening.width_mm (real-world mm) for gap size.
+    Uses opening.gap_mid_pts and opening.fixed_coord_pts (PDF pts) converted to mm for position.
     """
-    half_w = (opening.gap_width_pts * scale_pts_to_mm) / 2.0
+    half_w = opening.width_mm / 2.0          # half opening width in mm
+    wall_tol = 150.0                          # wall thickness tolerance in mm
 
     if opening.wall_direction == "horizontal":
-        gap_cx_mm = opening.gap_mid_pts   * scale_pts_to_mm
+        gap_cx_mm = opening.gap_mid_pts    * scale_pts_to_mm
         gap_cy_mm = opening.fixed_coord_pts * scale_pts_to_mm
         in_x = abs(px - gap_cx_mm) <= half_w + 1.0
-        in_y = abs(py - gap_cy_mm) <= opening.width_mm / 2.0 + 50.0
+        in_y = abs(py - gap_cy_mm) <= wall_tol
     else:
         gap_cx_mm = opening.fixed_coord_pts * scale_pts_to_mm
-        gap_cy_mm = opening.gap_mid_pts   * scale_pts_to_mm
-        in_x = abs(px - gap_cx_mm) <= opening.width_mm / 2.0 + 50.0
+        gap_cy_mm = opening.gap_mid_pts    * scale_pts_to_mm
+        in_x = abs(px - gap_cx_mm) <= wall_tol
         in_y = abs(py - gap_cy_mm) <= half_w + 1.0
 
     return in_x and in_y
