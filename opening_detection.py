@@ -135,6 +135,10 @@ class Opening:
     lintel_type: LinteldType
     pause_for_lintel: bool
 
+    # World mm coordinates (pipeline coordinate system, origin = outer wall corner)
+    world_x_mm: float = 0.0    # centre X of opening in world mm
+    world_y_mm: float = 0.0    # centre Y of opening in world mm
+
     # Override flag
     is_user_overridden: bool = False
 
@@ -270,31 +274,40 @@ class FloorPlanParser:
 
     def _calibrate_scale(self, page) -> None:
         """
-        Determine pts-to-mm conversion from the drawing scale annotation
-        or from known outer wall extents.
-        Uses: drawing_scale from ProjectConfig (e.g. 100 for 1:100).
-        Falls back to geometric calibration from detected wall extents.
-        """
-        # Primary: use annotated scale
-        # At 1:1 in PDF pts (1pt = 1/72 inch = 0.3528mm)
-        # At scale 1:S, 1pt represents S * 0.3528mm
-        scale = self.config.drawing_scale
-        self.scale_pts_to_mm = scale * 0.3528
+        Mirror the exact coordinate transformation used by Stage M1 (m1_ingest.py):
 
-        # Verify / refine using outer wall bounds from lines
-        lines = page.lines
-        if lines:
-            h_lines = [l for l in lines if abs(l["y0"] - l["y1"]) < self.LINE_GROUP_THRESH]
-            if h_lines:
-                all_x = [l["x0"] for l in h_lines] + [l["x1"] for l in h_lines]
-                x_min, x_max = min(all_x), max(all_x)
-                span_pts = x_max - x_min
-                # Known total width from drawing annotations = 10000mm (if available)
-                # Leave as annotation-based scale for now; refine in future
-                _ = span_pts  # placeholder for geometry-based calibration
+            k_world = PT_TO_MM * drawing_scale
+            x_world = x_pt * k_world
+            y_world = (page_h_pt - y_pt) * k_world   ← Y flipped at full page height
+
+        where PT_TO_MM = 25.4 / 72 = 0.352778 mm/pt.
+
+        No origin subtraction — the pipeline origin is always (0, 0) in PDF space.
+        The drawing_scale comes from the sidebar (M1Params.drawing_scale),
+        which is passed into ProjectConfig when opening detection is run.
+        """
+        PT_TO_MM = 25.4 / 72.0                                    # 0.352778 mm/pt
+        self.scale_pts_to_mm     = PT_TO_MM * self.config.drawing_scale
+        self.geo_scale_pts_to_mm = self.scale_pts_to_mm
+        self.page_h_pt           = page.height                    # full page height in pts
+        # x_origin = 0 (no subtraction, matching pipeline)
+        self.x_origin_pts        = 0.0
+        self.y_max_pts           = page.height                    # used in _pts_to_world_mm
 
     def _pts_to_mm(self, pts: float) -> float:
         return pts * self.scale_pts_to_mm
+
+    def _pts_to_world_mm(self, x_pts: float, y_pts: float):
+        """
+        Convert PDF pts to world mm using the identical transformation as m1_ingest.py:
+            x_world = x_pt * k
+            y_world = (page_h_pt - y_pt) * k
+        No origin subtraction — pipeline origin is (0,0) in PDF space.
+        """
+        k = self.scale_pts_to_mm
+        world_x = x_pts * k
+        world_y = (self.page_h_pt - y_pts) * k
+        return world_x, world_y
 
     # ------------------------------------------------------------------
     # Wall gap detection
@@ -475,6 +488,10 @@ class FloorPlanParser:
         win_num  = 1
 
         for gap, arc in matched_doors:
+            if gap.direction == "horizontal":
+                wx, wy = self._pts_to_world_mm(gap.gap_mid, gap.fixed_coord)
+            else:
+                wx, wy = self._pts_to_world_mm(gap.fixed_coord, gap.gap_mid)
             openings.append(Opening(
                 opening_id       = f"D{door_num:02d}",
                 opening_type     = OpeningType.DOOR,
@@ -485,6 +502,8 @@ class FloorPlanParser:
                 gap_mid_pts      = gap.gap_mid,
                 fixed_coord_pts  = gap.fixed_coord,
                 width_mm         = gap.gap_width_mm,
+                world_x_mm       = wx,
+                world_y_mm       = wy,
                 # Z — door void always from 0
                 z_void_bottom_mm = 0.0,
                 z_void_top_mm    = cfg.door_head_height_mm,
@@ -495,6 +514,10 @@ class FloorPlanParser:
             door_num += 1
 
         for gap in unmatched_windows:
+            if gap.direction == "horizontal":
+                wx, wy = self._pts_to_world_mm(gap.gap_mid, gap.fixed_coord)
+            else:
+                wx, wy = self._pts_to_world_mm(gap.fixed_coord, gap.gap_mid)
             openings.append(Opening(
                 opening_id       = f"W{win_num:02d}",
                 opening_type     = OpeningType.WINDOW,
@@ -505,6 +528,8 @@ class FloorPlanParser:
                 gap_mid_pts      = gap.gap_mid,
                 fixed_coord_pts  = gap.fixed_coord,
                 width_mm         = gap.gap_width_mm,
+                world_x_mm       = wx,
+                world_y_mm       = wy,
                 # Z — window void from sill
                 z_void_bottom_mm = cfg.window_sill_height_mm,
                 z_void_top_mm    = cfg.window_head_height_mm,
