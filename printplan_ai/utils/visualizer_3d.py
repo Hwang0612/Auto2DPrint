@@ -21,22 +21,18 @@ def _point_in_opening_xy(px: float, py: float, opening, scale_pts_to_mm: float) 
     """
     Check whether a point (px, py) in world-mm coordinates lies within the
     X-Y bounding box of an opening gap.
-    Uses opening.width_mm (real-world mm) for gap size.
-    Uses opening.gap_mid_pts and opening.fixed_coord_pts (PDF pts) converted to mm for position.
+    Uses opening.world_x_mm / world_y_mm which are pre-computed in the pipeline
+    coordinate system, so no coordinate conversion is needed here.
     """
-    half_w = opening.width_mm / 2.0          # half opening width in mm
-    wall_tol = 150.0                          # wall thickness tolerance in mm
+    half_w   = opening.width_mm / 2.0   # half opening width in mm
+    wall_tol = 500.0                     # wall thickness tolerance in mm (bead width + margin)
 
     if opening.wall_direction == "horizontal":
-        gap_cx_mm = opening.gap_mid_pts    * scale_pts_to_mm
-        gap_cy_mm = opening.fixed_coord_pts * scale_pts_to_mm
-        in_x = abs(px - gap_cx_mm) <= half_w + 1.0
-        in_y = abs(py - gap_cy_mm) <= wall_tol
+        in_x = abs(px - opening.world_x_mm) <= half_w + 1.0
+        in_y = abs(py - opening.world_y_mm) <= wall_tol
     else:
-        gap_cx_mm = opening.fixed_coord_pts * scale_pts_to_mm
-        gap_cy_mm = opening.gap_mid_pts    * scale_pts_to_mm
-        in_x = abs(px - gap_cx_mm) <= wall_tol
-        in_y = abs(py - gap_cy_mm) <= half_w + 1.0
+        in_x = abs(px - opening.world_x_mm) <= wall_tol
+        in_y = abs(py - opening.world_y_mm) <= half_w + 1.0
 
     return in_x and in_y
 
@@ -45,11 +41,12 @@ def _segment_suppressed_at_z(
     pts: list,
     z_mm: float,
     openings: list,
-    scale_pts_to_mm: float,
+    scale_pts_to_mm: float = 0.0,   # kept for API compat, unused
 ) -> bool:
     """
     Return True if the midpoint of a segment falls within any opening's
     X-Y footprint AND Z is inside its void range.
+    Uses pre-computed world_x_mm / world_y_mm on each Opening.
     """
     if not openings:
         return False
@@ -66,7 +63,7 @@ def _segment_suppressed_at_z(
 def filter_segments_for_openings(
     js_segments: list,
     openings: list,
-    scale_pts_to_mm: float,
+    scale_pts_to_mm: float = 0.0,   # kept for API compat, unused
 ) -> list:
     """
     Remove print segments whose midpoint lies inside an opening void zone.
@@ -79,7 +76,7 @@ def filter_segments_for_openings(
         if not seg["is_print"]:
             filtered.append(seg)
             continue
-        if _segment_suppressed_at_z(seg["pts"], seg["z"], openings, scale_pts_to_mm):
+        if _segment_suppressed_at_z(seg["pts"], seg["z"], openings):
             continue
         filtered.append(seg)
     return filtered
@@ -149,14 +146,28 @@ def build_3d_toolpath_webgl(
                     color = "#38bdf8"
             else:
                 color = "#475569"
-            js_segments.append({
-                "pts":      [[p[0], p[1]] for p in pts],
-                "z":        z,
-                "color":    color,
-                "is_print": is_print,
-                "layer":    layer.index,
-                "trail":    tr.trail_id if tr.trail_id is not None else 0,
-            })
+
+            # Split trace into individual point-pair segments for accurate
+            # opening suppression — a long trace midpoint may miss narrow openings
+            if is_print and openings:
+                for i in range(len(pts) - 1):
+                    js_segments.append({
+                        "pts":      [[pts[i][0], pts[i][1]], [pts[i+1][0], pts[i+1][1]]],
+                        "z":        z,
+                        "color":    color,
+                        "is_print": is_print,
+                        "layer":    layer.index,
+                        "trail":    tr.trail_id if tr.trail_id is not None else 0,
+                    })
+            else:
+                js_segments.append({
+                    "pts":      [[p[0], p[1]] for p in pts],
+                    "z":        z,
+                    "color":    color,
+                    "is_print": is_print,
+                    "layer":    layer.index,
+                    "trail":    tr.trail_id if tr.trail_id is not None else 0,
+                })
 
     bbox  = stage3.coordinate_frame.page_bbox_world_mm
     cx    = (bbox[0] + bbox[2]) / 2.0
