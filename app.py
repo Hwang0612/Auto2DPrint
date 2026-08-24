@@ -28,6 +28,9 @@ from printplan_ai.utils.visualizer_3d import (
     calc_material_metrics,
 )
 
+# ── Column Detection Module ───────────────────────────────────────
+from column_detection import detect_columns, render_columns_tab
+
 # ── Opening Detection Module ──────────────────────────────────────
 from opening_detection import (
     ProjectConfig,
@@ -218,9 +221,10 @@ metrics = st.session_state.metrics
 
 
 # ── Tab Navigation ───────────────────────────────────────────────
-tab_pipeline, tab_openings, tab_3d, tab_analytics, tab_gcode, tab_docs = st.tabs([
+tab_pipeline, tab_openings, tab_columns, tab_3d, tab_analytics, tab_gcode, tab_docs = st.tabs([
     "🚀 Pipeline & Overview",
-    "🚪 Opening Detection",           # ← NEW TAB
+    "🚪 Opening Detection",
+    "🏛️ Column Details",              # ← NEW TAB
     "🧊 3D Visualizer & Simulation",
     "📊 Analytics & Concrete Estimator",
     "📜 G-code Inspector & Download",
@@ -532,7 +536,17 @@ with tab_openings:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# TAB 3 — 3D Visualizer & Simulation
+# TAB 3 — Column Details
+# ═══════════════════════════════════════════════════════════════════
+with tab_columns:
+    render_columns_tab(
+        pdf_path=st.session_state.pdf_path_for_openings,
+        drawing_scale=int(scale),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TAB 4 — 3D Visualizer & Simulation
 # ═══════════════════════════════════════════════════════════════════
 with tab_3d:
     st.markdown("### 🧊 WebGL Interactive 3D Toolpath & Structure Model")
@@ -569,26 +583,6 @@ with tab_3d:
             f"\U0001f6aa Opening suppression active \u2014 {len(active_openings)} opening(s) applied to 3D geometry. "
             "Door/window voids are removed from the rendered walls."
         )
-        # DEBUG: show opening world coords vs actual wall segment coords
-        with st.expander("🔧 Debug — Coordinate Comparison"):
-            st.markdown("**Opening world coordinates:**")
-            for op in active_openings:
-                st.code(f"{op.opening_id}: world_x={op.world_x_mm:.1f}mm  world_y={op.world_y_mm:.1f}mm  "
-                        f"width={op.width_mm:.0f}mm  void_z={op.z_void_bottom_mm:.0f}-{op.z_void_top_mm:.0f}mm")
-            st.markdown("**Sample wall segment coordinates (layer 0, first 5 print traces):**")
-            layer0 = stage3.layers[0]
-            count = 0
-            for tr in layer0.traces:
-                if tr.kind == "print" and count < 5:
-                    pts = tr.points
-                    mid_x = sum(p[0] for p in pts) / len(pts)
-                    mid_y = sum(p[1] for p in pts) / len(pts)
-                    st.code(f"trace mid=({mid_x:.1f}, {mid_y:.1f})mm  "
-                            f"x_range=[{min(p[0] for p in pts):.1f}, {max(p[0] for p in pts):.1f}]  "
-                            f"y_range=[{min(p[1] for p in pts):.1f}, {max(p[1] for p in pts):.1f}]")
-                    count += 1
-            st.markdown(f"**stage3 bbox:** {stage3.coordinate_frame.page_bbox_world_mm}")
-            st.markdown(f"**sidebar scale:** {scale}  **k_world:** {stage3.coordinate_frame.k_world_mm_per_pt:.4f}")
 
     if render_mode == "Extruded Concrete Beads":
         build_3d_toolpath_webgl(
