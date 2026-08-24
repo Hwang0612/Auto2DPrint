@@ -17,22 +17,23 @@ from printplan_ai.models import Stage3Output, Layer, Trace
 # Opening-aware segment filtering
 # ---------------------------------------------------------------------------
 
-def _point_in_opening_xy(px: float, py: float, opening, scale_pts_to_mm: float) -> bool:
+def _point_in_opening_xy(px: float, py: float, opening) -> bool:
     """
-    Check whether a point (px, py) in world-mm coordinates lies within the
-    X-Y bounding box of an opening gap.
-    Uses opening.world_x_mm / world_y_mm which are pre-computed in the pipeline
-    coordinate system, so no coordinate conversion is needed here.
+    Check whether a world-mm point (px, py) lies within the XY footprint
+    of an opening.  Uses cx_world_mm / cy_world_mm stored by opening_detection
+    v3.0 — these are in the same coordinate system as the toolpath segments.
     """
-    half_w   = opening.width_mm / 2.0   # half opening width in mm
-    wall_tol = 500.0                     # wall thickness tolerance in mm (bead width + margin)
+    half_w  = opening.width_mm / 2.0 + 50.0   # tolerance 50 mm
+    perp    = 300.0 / 2.0 + 50.0              # assume 300 mm wall thickness + tolerance
 
     if opening.wall_direction == "horizontal":
-        in_x = abs(px - opening.world_x_mm) <= half_w + 1.0
-        in_y = abs(py - opening.world_y_mm) <= wall_tol
+        # Opening spans along X; wall runs along X, normal is Y
+        in_x = abs(px - opening.cx_world_mm) <= half_w
+        in_y = abs(py - opening.cy_world_mm) <= perp
     else:
-        in_x = abs(px - opening.world_x_mm) <= wall_tol
-        in_y = abs(py - opening.world_y_mm) <= half_w + 1.0
+        # Opening spans along Y; wall runs along Y, normal is X
+        in_x = abs(px - opening.cx_world_mm) <= perp
+        in_y = abs(py - opening.cy_world_mm) <= half_w
 
     return in_x and in_y
 
@@ -41,12 +42,11 @@ def _segment_suppressed_at_z(
     pts: list,
     z_mm: float,
     openings: list,
-    scale_pts_to_mm: float = 0.0,   # kept for API compat, unused
+    scale_pts_to_mm: float = 1.0,   # kept for API compat, no longer used
 ) -> bool:
     """
     Return True if the midpoint of a segment falls within any opening's
-    X-Y footprint AND Z is inside its void range.
-    Uses pre-computed world_x_mm / world_y_mm on each Opening.
+    XY footprint AND z_mm is inside its void Z range.
     """
     if not openings:
         return False
@@ -55,7 +55,7 @@ def _segment_suppressed_at_z(
     mid_y = sum(p[1] for p in pts) / n
     for op in openings:
         if op.z_void_bottom_mm <= z_mm < op.z_void_top_mm:
-            if _point_in_opening_xy(mid_x, mid_y, op, scale_pts_to_mm):
+            if _point_in_opening_xy(mid_x, mid_y, op):
                 return True
     return False
 
@@ -63,7 +63,7 @@ def _segment_suppressed_at_z(
 def filter_segments_for_openings(
     js_segments: list,
     openings: list,
-    scale_pts_to_mm: float = 0.0,   # kept for API compat, unused
+    scale_pts_to_mm: float = 1.0,   # kept for API compat
 ) -> list:
     """
     Remove print segments whose midpoint lies inside an opening void zone.
@@ -146,28 +146,14 @@ def build_3d_toolpath_webgl(
                     color = "#38bdf8"
             else:
                 color = "#475569"
-
-            # Split trace into individual point-pair segments for accurate
-            # opening suppression — a long trace midpoint may miss narrow openings
-            if is_print and openings:
-                for i in range(len(pts) - 1):
-                    js_segments.append({
-                        "pts":      [[pts[i][0], pts[i][1]], [pts[i+1][0], pts[i+1][1]]],
-                        "z":        z,
-                        "color":    color,
-                        "is_print": is_print,
-                        "layer":    layer.index,
-                        "trail":    tr.trail_id if tr.trail_id is not None else 0,
-                    })
-            else:
-                js_segments.append({
-                    "pts":      [[p[0], p[1]] for p in pts],
-                    "z":        z,
-                    "color":    color,
-                    "is_print": is_print,
-                    "layer":    layer.index,
-                    "trail":    tr.trail_id if tr.trail_id is not None else 0,
-                })
+            js_segments.append({
+                "pts":      [[p[0], p[1]] for p in pts],
+                "z":        z,
+                "color":    color,
+                "is_print": is_print,
+                "layer":    layer.index,
+                "trail":    tr.trail_id if tr.trail_id is not None else 0,
+            })
 
     bbox  = stage3.coordinate_frame.page_bbox_world_mm
     cx    = (bbox[0] + bbox[2]) / 2.0
@@ -176,8 +162,7 @@ def build_3d_toolpath_webgl(
     span  = max(bbox[2] - bbox[0], bbox[3] - bbox[1], 1.0)
     # Apply opening void suppression if openings were detected
     if openings:
-        scale_pts_to_mm = drawing_scale * 0.3528
-        js_segments = filter_segments_for_openings(js_segments, openings, scale_pts_to_mm)
+        js_segments = filter_segments_for_openings(js_segments, openings)
 
     segments_json  = json.dumps(js_segments)
     wireframe_mode = "true" if render_mode == "Wireframe Toolpath" else "false"
