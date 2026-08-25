@@ -864,6 +864,223 @@ def generate_gcode_from_openings(openings, config) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Real XY G-code generation from Stage3Output + openings
+# ---------------------------------------------------------------------------
+
+def _point_in_opening_xy_od(px: float, py: float, opening: "Opening") -> bool:
+    """Check if world-mm point is within opening XY footprint (with 50mm tolerance)."""
+    half_w = opening.width_mm / 2.0 + 50.0
+    perp   = 300.0 / 2.0 + 50.0
+    if opening.wall_direction == "horizontal":
+        in_x = abs(px - opening.cx_world_mm) <= half_w
+        in_y = abs(py - opening.cy_world_mm) <= perp
+    else:
+        in_x = abs(px - opening.cx_world_mm) <= perp
+        in_y = abs(py - opening.cy_world_mm) <= half_w
+    return in_x and in_y
+
+
+def _clip_trace_for_openings(
+    pts: list,
+    openings: list,
+    z_mm: float,
+) -> list:
+    """
+    Split a polyline at opening boundaries for SPLIT_PIERS layers.
+    Returns a list of sub-polylines; segments entirely inside an opening void
+    are dropped; segments crossing a boundary are split at the boundary midpoint.
+
+    Returns list of lists-of-points (each sub-list is a continuous run).
+    """
+    if not pts or len(pts) < 2:
+        return [pts] if pts else []
+
+    # Classify each point as inside (True) or outside (False) any active opening void
+    def in_any_void(p):
+        for op in openings:
+            action = op.get_print_action(z_mm)
+            if action == PrintAction.SPLIT_PIERS:
+                if _point_in_opening_xy_od(p[0], p[1], op):
+                    return True
+        return False
+
+    runs = []
+    current_run = []
+    for i in range(len(pts) - 1):
+        p0 = pts[i]
+        p1 = pts[i + 1]
+        in0 = in_any_void(p0)
+        in1 = in_any_void(p1)
+
+        if not in0 and not in1:
+            # Both outside — keep segment
+            if not current_run:
+                current_run.append(p0)
+            current_run.append(p1)
+        elif in0 and in1:
+            # Both inside void — skip; end current run
+            if current_run:
+                runs.append(current_run)
+                current_run = []
+        elif not in0 and in1:
+            # Crossing into void — add p0, split at midpoint, end run
+            mid = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
+            if not current_run:
+                current_run.append(p0)
+            current_run.append(mid)
+            runs.append(current_run)
+            current_run = []
+        else:
+            # Crossing out of void — start new run from midpoint
+            mid = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
+            current_run = [mid, p1]
+
+    if current_run and len(current_run) >= 2:
+        runs.append(current_run)
+
+    return [r for r in runs if len(r) >= 2]
+
+
+def synthesise_gcode_with_openings(
+    stage3,
+    m4_params,
+    openings: list,
+    *,
+    include_travel: bool = True,
+) -> str:
+    """
+    Generate real XY G-code from Stage3Output with opening awareness.
+
+    For each layer:
+      - z < void_bottom           : print FULL trace (no clipping)
+      - void_bottom <= z < void_top: SPLIT_PIERS — clip traces at opening boundary
+      - z == void_top              : M0 pause for lintel (once per opening)
+      - void_top < z < z_resume   : SKIP — suppress segments over opening XY
+      - z >= z_resume             : FULL_WALL — print everything (continuous over lintel)
+
+    Output is real G-code: G0 X Y Z F for travel, G1 X Y Z E F for print.
+    """
+    ps  = m4_params.print_speed_mm_s
+    ts  = m4_params.travel_speed_mm_s
+    bw  = m4_params.bead_width_mm
+    lh  = getattr(m4_params, "layer_height_mm", 20.0)   # may come from M3Params
+    pv  = m4_params.pump_volume_per_unit_e
+    zl  = m4_params.z_lift_mm
+
+    lines = [
+        "; PrintPlan AI -- Opening-Aware G-code (Real XY)",
+        f"; Bead width: {bw}mm | Layer height: {lh}mm",
+        f"; Print speed: {ps}mm/s | Travel speed: {ts}mm/s",
+        f"; Openings: {len(openings)}",
+        "",
+        "G21 ; mm units",
+        "G90 ; absolute positioning",
+        "G92 E0 ; reset extruder",
+        "",
+    ]
+
+    e_pos      = 0.0
+    lintel_done = set()   # opening IDs where M0 has been emitted
+
+    for layer in stage3.layers:
+        z_mm  = layer.z_mm
+        idx   = layer.index
+        lines.append(f"; --- Layer {idx}  Z={z_mm:.1f}mm ---")
+
+        # Determine per-opening actions at this Z
+        actions = {}
+        for op in openings:
+            actions[op.opening_id] = op.get_print_action(z_mm)
+
+        # Emit M0 pause for any opening that needs lintel at this Z (once only)
+        for op in openings:
+            if actions[op.opening_id] == PrintAction.PAUSE_LINTEL:
+                if op.opening_id not in lintel_done:
+                    lines += [
+                        f"; ===== PAUSE: install {op.lintel_type.value} lintel for {op.opening_id} =====",
+                        f"; Opening width={op.width_mm:.0f}mm  Z_seat={z_mm:.1f}mm  Z_resume={op.z_resume_mm:.1f}mm",
+                        "M0 ; pause -- install lintel",
+                        "",
+                    ]
+                    lintel_done.add(op.opening_id)
+
+        prev_end = None   # last printed XYZ position this layer
+
+        for tr in layer.traces:
+            pts = tr.points
+            if len(pts) < 2:
+                continue
+            is_print = tr.kind == "print"
+
+            if is_print:
+                # Determine if this trace needs splitting / skipping
+                # For each opening that is SPLIT_PIERS or SKIP, filter accordingly
+                needs_split = any(
+                    actions[op.opening_id] == PrintAction.SPLIT_PIERS
+                    for op in openings
+                )
+                needs_skip = any(
+                    actions[op.opening_id] == PrintAction.SKIP and
+                    _point_in_opening_xy_od(
+                        sum(p[0] for p in pts) / len(pts),
+                        sum(p[1] for p in pts) / len(pts),
+                        op,
+                    )
+                    for op in openings
+                )
+
+                if needs_skip:
+                    lines.append(f"; SKIP trace (inside lintel zone of opening)")
+                    continue
+
+                if needs_split:
+                    sub_runs = _clip_trace_for_openings(pts, openings, z_mm)
+                else:
+                    sub_runs = [pts]
+
+                for run in sub_runs:
+                    if len(run) < 2:
+                        continue
+                    # Travel to start of run
+                    sx, sy = run[0]
+                    if include_travel:
+                        lines.append(
+                            f"G0 X{sx:.3f} Y{sy:.3f} Z{(z_mm + zl):.3f} F{ts * 60:.0f}"
+                        )
+                        lines.append(
+                            f"G0 X{sx:.3f} Y{sy:.3f} Z{z_mm:.3f} F{ts * 60:.0f}"
+                        )
+                    # Print moves
+                    for p in run[1:]:
+                        dx = p[0] - sx; dy = p[1] - sy
+                        seg_len = math.hypot(dx, dy)
+                        e_pos += seg_len * pv
+                        lines.append(
+                            f"G1 X{p[0]:.3f} Y{p[1]:.3f} Z{z_mm:.3f}"
+                            f" E{e_pos:.4f} F{ps * 60:.0f}"
+                        )
+                        sx, sy = p
+
+                    prev_end = (run[-1][0], run[-1][1])
+
+            else:
+                # Travel move
+                if include_travel and len(pts) >= 2:
+                    ex, ey = pts[-1]
+                    lines.append(
+                        f"G0 X{ex:.3f} Y{ey:.3f} Z{z_mm:.3f} F{ts * 60:.0f}"
+                    )
+
+        lines.append("")
+
+    lines += [
+        "; === Print complete ===",
+        "M2",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # CLI test
 # ---------------------------------------------------------------------------
 
