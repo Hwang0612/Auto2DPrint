@@ -145,6 +145,11 @@ class Opening:
 
     # -- Wall geometry --
     wall_thickness_mm: float = 300.0
+    # True wall centreline in the perpendicular direction (world mm).
+    # For horizontal wall: this is the Y midpoint between the two wall faces.
+    # For vertical wall:   this is the X midpoint between the two wall faces.
+    # Computed from jamb line midpoints in opening_detection; used by visualizer.
+    wall_centre_perp_mm: float = 0.0
 
     # -- Z parameters --
     z_void_bottom_mm: float = 0.0
@@ -358,21 +363,49 @@ class FloorPlanParser:
             door_count = 0
             for d in merged:
                 door_count += 1
+                ori = d["ori"]
+                cx_d, cy_d = d["cx"], d["cy"]
+
+                # --- Compute true wall centreline from nearby jamb lines -------
+                # Jamb lines (150-600 mm) span the full wall thickness.
+                # Their midpoint is the wall centreline in the perp direction.
+                JAMB_SEARCH = d["width"] * 0.75 + 50.0
+                nearby_jambs = [
+                    jl for jl in jamb_lines
+                    if min(
+                        math.hypot(jl["p1"][0] - cx_d, jl["p1"][1] - cy_d),
+                        math.hypot(jl["p2"][0] - cx_d, jl["p2"][1] - cy_d),
+                    ) < JAMB_SEARCH
+                ]
+                if nearby_jambs:
+                    if ori == "horizontal":
+                        # Jamb lines run along Y; midpoint Y = wall centre Y
+                        mid_perps = [(jl["p1"][1] + jl["p2"][1]) / 2 for jl in nearby_jambs]
+                    else:
+                        # Jamb lines run along X; midpoint X = wall centre X
+                        mid_perps = [(jl["p1"][0] + jl["p2"][0]) / 2 for jl in nearby_jambs]
+                    wall_centre_perp = sum(mid_perps) / len(mid_perps)
+                else:
+                    # Fallback: offset hinge by half wall thickness
+                    half_t = cfg.wall_thickness_mm / 2.0
+                    wall_centre_perp = (cy_d + half_t) if ori == "horizontal" else (cx_d + half_t)
+
                 openings.append(Opening(
                     opening_id       = f"D{door_count:02d}",
                     opening_type     = OpeningType.DOOR,
                     wall_id          = f"OCG_DOOR_{door_count:02d}",
-                    wall_direction   = d["ori"],
+                    wall_direction   = ori,
                     width_mm         = d["width"],
-                    cx_world_mm      = d["cx"],
-                    cy_world_mm      = d["cy"],
+                    cx_world_mm      = cx_d,
+                    cy_world_mm      = cy_d,
                     # Populate legacy pt fields from world coords (approx, for display)
-                    gap_mid_pts      = d["cx"] / self.config.k,
-                    fixed_coord_pts  = d["cy"] / self.config.k,
+                    gap_mid_pts      = cx_d / self.config.k,
+                    fixed_coord_pts  = cy_d / self.config.k,
                     gap_width_pts    = d["width"] / self.config.k,
-                    gap_start_pts    = (d["cx"] - d["width"]/2) / self.config.k,
-                    gap_end_pts      = (d["cx"] + d["width"]/2) / self.config.k,
+                    gap_start_pts    = (cx_d - d["width"]/2) / self.config.k,
+                    gap_end_pts      = (cx_d + d["width"]/2) / self.config.k,
                     wall_thickness_mm    = cfg.wall_thickness_mm,
+                    wall_centre_perp_mm  = wall_centre_perp,
                     z_void_bottom_mm = 0.0,
                     z_void_top_mm    = cfg.door_head_height_mm,
                     lintel_thickness_mm = cfg.lintel_thickness_mm,
@@ -440,6 +473,10 @@ class FloorPlanParser:
                     width   = max(span_x, span_y)
                     wall_ori = "vertical" if span_y > span_x else "horizontal"
 
+                # Window symbol bbox is centred on the wall centreline.
+                # Perp direction: Y for horizontal wall, X for vertical wall.
+                win_centre_perp = cy if wall_ori == "horizontal" else cx
+
                 win_count += 1
                 openings.append(Opening(
                     opening_id       = f"W{win_count:02d}",
@@ -455,6 +492,7 @@ class FloorPlanParser:
                     gap_start_pts    = (cx - width/2) / self.config.k,
                     gap_end_pts      = (cx + width/2) / self.config.k,
                     wall_thickness_mm    = cfg.wall_thickness_mm,
+                    wall_centre_perp_mm  = win_centre_perp,
                     z_void_bottom_mm = cfg.window_sill_height_mm,
                     z_void_top_mm    = cfg.window_head_height_mm,
                     lintel_thickness_mm = cfg.lintel_thickness_mm,
@@ -565,6 +603,9 @@ class FloorPlanParser:
         for gap, arc in matched_doors:
             # Approximate world mm from pts (no Y-flip available in gap fallback)
             cx_mm = gap.cx * k; cy_mm = gap.cy * k
+            # wall_centre_perp: fixed_coord is the wall line position in pts
+            fixed_mm = gap.fixed_coord * k
+            door_centre_perp = fixed_mm  # best approximation without Y-flip
             openings.append(Opening(
                 opening_id       = f"D{door_num:02d}",
                 opening_type     = OpeningType.DOOR,
@@ -579,6 +620,7 @@ class FloorPlanParser:
                 fixed_coord_pts  = gap.fixed_coord,
                 gap_width_pts    = gap.gap_width_pts,
                 wall_thickness_mm    = cfg.wall_thickness_mm,
+                wall_centre_perp_mm  = door_centre_perp,
                 z_void_bottom_mm = 0.0,
                 z_void_top_mm    = cfg.door_head_height_mm,
                 lintel_thickness_mm = cfg.lintel_thickness_mm,
@@ -589,6 +631,8 @@ class FloorPlanParser:
 
         for gap in unmatched_windows:
             cx_mm = gap.cx * k; cy_mm = gap.cy * k
+            fixed_mm = gap.fixed_coord * k
+            win_centre_perp = fixed_mm
             openings.append(Opening(
                 opening_id       = f"W{win_num:02d}",
                 opening_type     = OpeningType.WINDOW,
@@ -603,6 +647,7 @@ class FloorPlanParser:
                 fixed_coord_pts  = gap.fixed_coord,
                 gap_width_pts    = gap.gap_width_pts,
                 wall_thickness_mm    = cfg.wall_thickness_mm,
+                wall_centre_perp_mm  = win_centre_perp,
                 z_void_bottom_mm = cfg.window_sill_height_mm,
                 z_void_top_mm    = cfg.window_head_height_mm,
                 lintel_thickness_mm = cfg.lintel_thickness_mm,
