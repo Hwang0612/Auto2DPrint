@@ -176,25 +176,35 @@ def build_3d_toolpath_webgl(
 
     def _wall_centreline_for_opening(op, all_layers):
         """
-        Find the true wall centreline at the opening.
+        Return (cx, cy) of the true wall centreline at this opening.
 
-        Strategy: collect midpoints of all print segments whose along-wall
-        coordinate falls inside the opening span. The perpendicular coords
-        will cluster around two values (the two parallel PDF wall lines).
-        Split into two clusters at the largest gap, average each cluster,
-        then take the midpoint of the two cluster centres — this equals the
-        midpoint of the two PDF wall-line centre-to-centre positions exactly.
+        The 3DCP toolpath follows the PDF wall lines exactly — each bead
+        path IS one PDF wall line.  For a two-bead wall we collect midpoints
+        of parallel bead segments within the opening span and within
+        wall_thickness distance of the known hinge face, so only segments
+        belonging to THIS wall are included.
 
-        For a horizontal wall: perp axis = Y  →  centre_Y = (c1_Y + c2_Y) / 2
-        For a vertical wall:   perp axis = X  →  centre_X = (c1_X + c2_X) / 2
+        (min_perp + max_perp) / 2  =  midpoint of the two PDF wall lines
+                                    =  true wall centreline.
+
+        For a horizontal wall: perp axis = Y
+        For a vertical wall:   perp axis = X
         """
-        # Search window: only segments whose along-wall coord is within the opening span
-        half_w = op.width_mm / 2.0 + 50.0
-        perp_coords = []
+        half_w = op.width_mm / 2.0 + 50.0          # along-wall search window
+        wall_t = getattr(op, "wall_thickness_mm", None) or 300.0
+        # Hinge/arc face gives approximate perp position of one wall face.
+        # Accept segments within 1.5 × wall_t of that face to capture both beads
+        # while excluding unrelated parallel walls further away.
+        if op.wall_direction == "horizontal":
+            hinge_perp = op.cy_world_mm
+        else:
+            hinge_perp = op.cx_world_mm
+        perp_tol = wall_t * 1.5
 
+        perp_coords = []
         for layer in all_layers:
             if layer.z_mm >= op.z_void_bottom_mm:
-                break                          # only full-wall layers (below void)
+                break
             for tr in layer.traces:
                 if tr.kind != "print":
                     continue
@@ -206,38 +216,29 @@ def build_3d_toolpath_webgl(
                     mx = (x0 + x1) / 2
                     my = (y0 + y1) / 2
                     if op.wall_direction == "horizontal":
-                        # Only keep segments that run roughly along X (parallel to wall)
-                        # Skip perpendicular connectors that would fill the bead gap
-                        if dx < dy:
+                        if dx <= dy:          # skip perpendicular/diagonal segments
                             continue
-                        if abs(mx - op.cx_world_mm) <= half_w:
-                            perp_coords.append(my)
+                        if abs(mx - op.cx_world_mm) > half_w:
+                            continue          # outside along-wall span
+                        if abs(my - hinge_perp) > perp_tol:
+                            continue          # too far from this wall in Y
+                        perp_coords.append(my)
                     else:
-                        # Only keep segments that run roughly along Y (parallel to wall)
-                        if dy < dx:
+                        if dy <= dx:
                             continue
-                        if abs(my - op.cy_world_mm) <= half_w:
-                            perp_coords.append(mx)
+                        if abs(my - op.cy_world_mm) > half_w:
+                            continue
+                        if abs(mx - hinge_perp) > perp_tol:
+                            continue
+                        perp_coords.append(mx)
 
         if not perp_coords:
-            return op.cx_world_mm, op.cy_world_mm   # fallback: use arc origin
+            # Fallback: use op.cx/cy directly (may be hinge face but better than nothing)
+            return op.cx_world_mm, op.cy_world_mm
 
-        # Cluster into two wall lines by finding the largest gap between
-        # sorted unique perpendicular values. Each cluster = one PDF wall line.
-        sorted_p = sorted(set(round(c, 0) for c in perp_coords))
-        if len(sorted_p) == 1:
-            centre_perp = sorted_p[0]
-        else:
-            # Find the index of the largest gap
-            gaps = [sorted_p[i+1] - sorted_p[i] for i in range(len(sorted_p) - 1)]
-            split_idx = gaps.index(max(gaps))
-            wall1 = sorted_p[:split_idx + 1]
-            wall2 = sorted_p[split_idx + 1:]
-            # Centre of each cluster = mean of its values
-            c1 = sum(wall1) / len(wall1)
-            c2 = sum(wall2) / len(wall2)
-            # Midpoint between the two PDF wall-line centres
-            centre_perp = (c1 + c2) / 2.0
+        # Two wall lines → their Y (or X) positions are at min and max of collected coords.
+        # Midpoint = true wall centreline.
+        centre_perp = (min(perp_coords) + max(perp_coords)) / 2.0
 
         if op.wall_direction == "horizontal":
             return op.cx_world_mm, centre_perp
