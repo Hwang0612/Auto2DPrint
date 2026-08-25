@@ -355,12 +355,51 @@ with tab_openings:
         win_head_mm       = st.number_input("Window head height (mm)", value=2100, min_value=500,  max_value=3000, step=50)
     with col_p3:
         lintel_thick_mm   = st.number_input("Lintel thickness (mm)",   value=200,  min_value=50,   max_value=500,  step=25)
+
+        # Auto-compute wall thickness from Stage2 geometry:
+        # wall_thickness (outer→outer) = centre-to-centre of parallel wall lines + bead_width
+        # Centre-to-centre is the perpendicular spread of wall segment midpoints in Stage2.
+        auto_wall_thick = int(bead_w)   # fallback = single bead
+        stage2_for_wt = st.session_state.get("stage2")
+        if stage2_for_wt is not None:
+            try:
+                walls = stage2_for_wt.walls
+                h_ys = [((w.p1[1] + w.p2[1]) / 2)
+                        for w in walls
+                        if abs(w.p2[0] - w.p1[0]) >= abs(w.p2[1] - w.p1[1])]
+                v_xs = [((w.p1[0] + w.p2[0]) / 2)
+                        for w in walls
+                        if abs(w.p2[1] - w.p1[1]) > abs(w.p2[0] - w.p1[0])]
+                spreads = []
+                if len(h_ys) >= 2:
+                    spreads.append(max(h_ys) - min(h_ys))
+                if len(v_xs) >= 2:
+                    spreads.append(max(v_xs) - min(v_xs))
+                if spreads:
+                    # smallest perpendicular spread ≈ wall section c-to-c distance
+                    ctc = min(spreads)
+                    auto_wall_thick = max(int(bead_w), int(round(ctc + bead_w)))
+            except Exception:
+                pass
+
+        wall_thick_mm = st.number_input(
+            "Wall thickness (mm)",
+            value=auto_wall_thick,
+            min_value=10, max_value=2000, step=10,
+            help=(
+                "Outer face → outer face of the printed wall section.\n\n"
+                "Auto-computed from PDF geometry as:\n"
+                "  centre-to-centre (from drawing) + bead_width\n\n"
+                "Override if needed."
+            ),
+        )
         lintel_type_sel   = st.selectbox("Lintel type", ["timber", "steel", "precast", "none"])
         pause_lintel      = st.checkbox("Pause G-code at lintel level", value=True)
 
     op_config = ProjectConfig(
         layer_height_mm        = float(op_layer_h),
         wall_height_mm         = float(wall_height_mm),
+        wall_thickness_mm      = float(wall_thick_mm),
         lintel_thickness_mm    = float(lintel_thick_mm),
         lintel_type            = LinteldType(lintel_type_sel),
         pause_for_lintel       = pause_lintel,
