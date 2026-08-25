@@ -358,26 +358,33 @@ with tab_openings:
 
         # Auto-compute wall thickness from Stage2 geometry:
         # wall_thickness (outer→outer) = centre-to-centre of parallel wall lines + bead_width
-        # Centre-to-centre is the perpendicular spread of wall segment midpoints in Stage2.
+        # We find the smallest gap between adjacent parallel midpoint coords — that's the
+        # wall section c-to-c (not the full building span).
         auto_wall_thick = int(bead_w)   # fallback = single bead
         stage2_for_wt = st.session_state.get("stage2")
         if stage2_for_wt is not None:
             try:
                 walls = stage2_for_wt.walls
-                h_ys = [((w.p1[1] + w.p2[1]) / 2)
-                        for w in walls
-                        if abs(w.p2[0] - w.p1[0]) >= abs(w.p2[1] - w.p1[1])]
-                v_xs = [((w.p1[0] + w.p2[0]) / 2)
-                        for w in walls
-                        if abs(w.p2[1] - w.p1[1]) > abs(w.p2[0] - w.p1[0])]
-                spreads = []
-                if len(h_ys) >= 2:
-                    spreads.append(max(h_ys) - min(h_ys))
-                if len(v_xs) >= 2:
-                    spreads.append(max(v_xs) - min(v_xs))
-                if spreads:
-                    # smallest perpendicular spread ≈ wall section c-to-c distance
-                    ctc = min(spreads)
+                # Collect perpendicular midpoint coords for each wall direction
+                h_ys = sorted(set(
+                    round((w.p1[1] + w.p2[1]) / 2)
+                    for w in walls
+                    if abs(w.p2[0] - w.p1[0]) >= abs(w.p2[1] - w.p1[1])
+                ))
+                v_xs = sorted(set(
+                    round((w.p1[0] + w.p2[0]) / 2)
+                    for w in walls
+                    if abs(w.p2[1] - w.p1[1]) > abs(w.p2[0] - w.p1[0])
+                ))
+                # Smallest gap between adjacent parallel midpoint coords = wall c-to-c
+                min_gaps = []
+                for coords in (h_ys, v_xs):
+                    gaps = [coords[i+1] - coords[i] for i in range(len(coords)-1)]
+                    small = [g for g in gaps if bead_w * 0.5 < g < 2000]
+                    if small:
+                        min_gaps.append(min(small))
+                if min_gaps:
+                    ctc = min(min_gaps)
                     auto_wall_thick = max(int(bead_w), int(round(ctc + bead_w)))
             except Exception:
                 pass
