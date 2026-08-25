@@ -40,6 +40,7 @@ from opening_detection import (
     LinteldType,
     OpeningType,
     PrintAction,
+    synthesise_gcode_with_openings,
 )
 
 
@@ -497,8 +498,22 @@ with tab_openings:
 
             if gen_gcode_clicked or "opening_gcode" in st.session_state:
                 if gen_gcode_clicked:
-                    generator = GCodeGenerator(op_config)
-                    opening_gcode = generator.generate_full_schedule_gcode(schedule, openings)
+                    stage3_for_gcode = st.session_state.get("stage3")
+                    if stage3_for_gcode is not None:
+                        # Real XY G-code from Stage3 toolpath + opening awareness
+                        opening_gcode = synthesise_gcode_with_openings(
+                            stage3_for_gcode,
+                            M4Params(
+                                bead_width_mm=bead_w,
+                                print_speed_mm_s=speed,
+                                travel_speed_mm_s=speed * 2,
+                            ),
+                            openings,
+                        )
+                    else:
+                        # Fallback: pseudo-G-code (no Stage3 available)
+                        generator = GCodeGenerator(op_config)
+                        opening_gcode = generator.generate_full_schedule_gcode(schedule, openings)
                     st.session_state.opening_gcode = opening_gcode
 
                 opening_gcode = st.session_state.opening_gcode
