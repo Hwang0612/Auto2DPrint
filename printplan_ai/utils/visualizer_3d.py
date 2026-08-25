@@ -199,12 +199,23 @@ def build_3d_toolpath_webgl(
                 if tr.kind != "print":
                     continue
                 for i in range(len(tr.points) - 1):
-                    mx = (tr.points[i][0] + tr.points[i+1][0]) / 2
-                    my = (tr.points[i][1] + tr.points[i+1][1]) / 2
+                    x0, y0 = tr.points[i][0], tr.points[i][1]
+                    x1, y1 = tr.points[i+1][0], tr.points[i+1][1]
+                    dx = abs(x1 - x0)
+                    dy = abs(y1 - y0)
+                    mx = (x0 + x1) / 2
+                    my = (y0 + y1) / 2
                     if op.wall_direction == "horizontal":
+                        # Only keep segments that run roughly along X (parallel to wall)
+                        # Skip perpendicular connectors that would fill the bead gap
+                        if dx < dy:
+                            continue
                         if abs(mx - op.cx_world_mm) <= half_w:
                             perp_coords.append(my)
                     else:
+                        # Only keep segments that run roughly along Y (parallel to wall)
+                        if dy < dx:
+                            continue
                         if abs(my - op.cy_world_mm) <= half_w:
                             perp_coords.append(mx)
 
