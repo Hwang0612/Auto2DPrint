@@ -63,6 +63,7 @@ class ProjectConfig:
     """Project-wide 3DCP parameters."""
     layer_height_mm: float = 50.0
     wall_height_mm: float  = 2700.0
+    wall_thickness_mm: float = 300.0
     lintel_thickness_mm: float = 200.0
     lintel_type: LinteldType = LinteldType.TIMBER
     pause_for_lintel: bool = True
@@ -141,6 +142,9 @@ class Opening:
     gap_mid_pts: float   = 0.0
     fixed_coord_pts: float = 0.0
     gap_width_pts: float   = 0.0   # <- needed by old visualizer code
+
+    # -- Wall geometry --
+    wall_thickness_mm: float = 300.0
 
     # -- Z parameters --
     z_void_bottom_mm: float = 0.0
@@ -368,6 +372,7 @@ class FloorPlanParser:
                     gap_width_pts    = d["width"] / self.config.k,
                     gap_start_pts    = (d["cx"] - d["width"]/2) / self.config.k,
                     gap_end_pts      = (d["cx"] + d["width"]/2) / self.config.k,
+                    wall_thickness_mm    = cfg.wall_thickness_mm,
                     z_void_bottom_mm = 0.0,
                     z_void_top_mm    = cfg.door_head_height_mm,
                     lintel_thickness_mm = cfg.lintel_thickness_mm,
@@ -449,6 +454,7 @@ class FloorPlanParser:
                     gap_width_pts    = width / self.config.k,
                     gap_start_pts    = (cx - width/2) / self.config.k,
                     gap_end_pts      = (cx + width/2) / self.config.k,
+                    wall_thickness_mm    = cfg.wall_thickness_mm,
                     z_void_bottom_mm = cfg.window_sill_height_mm,
                     z_void_top_mm    = cfg.window_head_height_mm,
                     lintel_thickness_mm = cfg.lintel_thickness_mm,
@@ -572,6 +578,7 @@ class FloorPlanParser:
                 gap_mid_pts      = gap.gap_mid,
                 fixed_coord_pts  = gap.fixed_coord,
                 gap_width_pts    = gap.gap_width_pts,
+                wall_thickness_mm    = cfg.wall_thickness_mm,
                 z_void_bottom_mm = 0.0,
                 z_void_top_mm    = cfg.door_head_height_mm,
                 lintel_thickness_mm = cfg.lintel_thickness_mm,
@@ -595,6 +602,7 @@ class FloorPlanParser:
                 gap_mid_pts      = gap.gap_mid,
                 fixed_coord_pts  = gap.fixed_coord,
                 gap_width_pts    = gap.gap_width_pts,
+                wall_thickness_mm    = cfg.wall_thickness_mm,
                 z_void_bottom_mm = cfg.window_sill_height_mm,
                 z_void_top_mm    = cfg.window_head_height_mm,
                 lintel_thickness_mm = cfg.lintel_thickness_mm,
