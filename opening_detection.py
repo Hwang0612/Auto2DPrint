@@ -50,7 +50,7 @@ class LinteldType(Enum):
 # Gap size tolerance for arc-gap matching (pdfplumber fallback only)
 ARC_GAP_MATCH_TOLERANCE = 8.0   # pts
 # Two door arcs within this distance (mm) = same physical opening
-DOOR_MERGE_DIST_MM = 1200.0
+DOOR_MERGE_DIST_MM = 2000.0
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,10 @@ class FloorPlanParser:
                     arc_groups.append(curves)
 
             # Collect jamb lines (~wall thickness: 150-600 mm)
+            # Also collect short jamb-offset lines (20-149 mm) which connect
+            # the wall opening edge to the door hinge (length = jamb inset).
             jamb_lines = []
+            jamb_offset_lines = []
             for p in door_paths:
                 for it in p.get("items", []):
                     if it[0] == "l":
@@ -253,11 +256,14 @@ class FloorPlanParser:
                         wx1, wy1 = to_world(p1.x, p1.y)
                         wx2, wy2 = to_world(p2.x, p2.y)
                         ln = math.hypot(wx2 - wx1, wy2 - wy1)
+                        entry = {
+                            "p1": (wx1, wy1), "p2": (wx2, wy2), "len": ln,
+                            "raw_p1": (p1.x, p1.y), "raw_p2": (p2.x, p2.y),
+                        }
                         if 150 <= ln <= 600:
-                            jamb_lines.append({
-                                "p1": (wx1, wy1), "p2": (wx2, wy2), "len": ln,
-                                "raw_p1": (p1.x, p1.y), "raw_p2": (p2.x, p2.y),
-                            })
+                            jamb_lines.append(entry)
+                        elif 20 <= ln <= 149:
+                            jamb_offset_lines.append(entry)
 
             # Build raw door candidates from arc groups
             raw_doors = []
@@ -290,31 +296,37 @@ class FloorPlanParser:
                     arc_center = c1  # default
 
                 # -- Door width = arc radius -----------------------------------
-                # distance(hinge_pt, arc_center) = true radius = door leaf width.
-                # This is more accurate than chord/sqrt(2) because it does NOT
-                # assume exactly 90 deg sweep -- it measures the true radius
-                # regardless of the arc angle used in the CAD symbol.
+                # distance(hinge_pt to arc_center) = true leaf width (arc radius).
+                # Does NOT assume 90-deg sweep angle.
                 leaf_w = math.hypot(hx - arc_center[0], hy - arc_center[1])
 
                 # Sanity filter: skip arcs outside plausible door-width range
                 if not (600 <= leaf_w <= 1400):
                     continue
 
-                # Opening centre = midpoint of hinge point and arc pivot
-                cx = (hx + arc_center[0]) / 2.0
-                cy = (hy + arc_center[1]) / 2.0
+                # -- Opening centre = arc_center (hinge sits ON the wall face) --
+                # Using arc_center instead of (hx+arc_center)/2 ensures the
+                # opening centre lies at the wall, not inside the building.
+                # For double doors the two hinge points straddle the gap so the
+                # merged centre falls at the correct midpoint of the opening.
+                cx = arc_center[0]
+                cy = arc_center[1]
 
-                # Wall direction: wall runs along hinge->arc_center vector
+                # -- Wall direction -------------------------------------------
+                # The door leaf swings PERPENDICULAR to the containing wall.
+                # If the leaf swings in Y (wall_dy > wall_dx) the wall is
+                # HORIZONTAL (opening gap runs along X) -- and vice versa.
                 wall_dx = abs(hx - arc_center[0])
                 wall_dy = abs(hy - arc_center[1])
-                wall_dir_label = "horizontal" if wall_dx > wall_dy else "vertical"
+                wall_dir_label = "vertical" if wall_dx > wall_dy else "horizontal"
 
                 raw_doors.append({
-                    "cx": cx, "cy": cy, "width": leaf_w, "ori": wall_dir_label
+                    "cx": cx, "cy": cy, "width": leaf_w, "ori": wall_dir_label,
+                    "_hinge_x": cx, "_hinge_y": cy,  # arc_center = hinge ON wall
                 })
 
             # Merge duplicate arcs (two arc symbols for same physical opening)
-            merged = _merge_nearby(raw_doors, DOOR_MERGE_DIST_MM)
+            merged = _merge_nearby(raw_doors, DOOR_MERGE_DIST_MM, jamb_offset_lines)
 
             door_count = 0
             for d in merged:
@@ -568,8 +580,17 @@ class FloorPlanParser:
 # Clustering / merging helpers
 # ---------------------------------------------------------------------------
 
-def _merge_nearby(items: list, dist: float) -> list:
+def _merge_nearby(items: list, dist: float, jamb_offsets: list = None) -> list:
+    """Merge nearby door candidates into single openings.
+
+    For double doors, the two hinges straddle the wall gap.
+    Opening width = hinge_span + left_jamb_offset + right_jamb_offset,
+    where the jamb offset lines (short lines in the Doors layer connecting
+    the wall opening edge to the hinge) supply the exact inset on each side.
+    """
     used = [False] * len(items); merged = []
+    jamb_offsets = jamb_offsets or []
+
     for i, a in enumerate(items):
         if used[i]: continue
         group = [a]; used[i] = True
@@ -577,15 +598,76 @@ def _merge_nearby(items: list, dist: float) -> list:
             if used[j]: continue
             if math.hypot(b["cx"]-a["cx"], b["cy"]-a["cy"]) < dist:
                 group.append(b); used[j] = True
+
+        if len(group) == 1:
+            total_width = group[0]["width"]
+        else:
+            ori = group[0]["ori"]
+            leaf_w = max(g["width"] for g in group)
+
+            if ori == "horizontal":
+                # Opening gap runs along X; hinges are at each side of the gap
+                min_hinge_x = min(g["_hinge_x"] for g in group)
+                max_hinge_x = max(g["_hinge_x"] for g in group)
+                span = max_hinge_x - min_hinge_x
+                # Find short offset lines extending BEYOND each hinge outward
+                def left_off(hx):
+                    best = 0.0
+                    for jl in jamb_offsets:
+                        mx = (jl["p1"][0] + jl["p2"][0]) / 2
+                        my = (jl["p1"][1] + jl["p2"][1]) / 2
+                        if mx < hx and abs(my - group[0]["cy"]) < 300:
+                            best = max(best, hx - min(jl["p1"][0], jl["p2"][0]))
+                    return best
+                def right_off(hx):
+                    best = 0.0
+                    for jl in jamb_offsets:
+                        mx = (jl["p1"][0] + jl["p2"][0]) / 2
+                        my = (jl["p1"][1] + jl["p2"][1]) / 2
+                        if mx > hx and abs(my - group[0]["cy"]) < 300:
+                            best = max(best, max(jl["p1"][0], jl["p2"][0]) - hx)
+                    return best
+                lo = left_off(min_hinge_x)
+                ro = right_off(max_hinge_x)
+                if lo == 0 and ro == 0:
+                    lo = ro = leaf_w * 0.09  # fallback: ~9% typical jamb inset
+                total_width = span + lo + ro
+            else:
+                # Opening gap runs along Y
+                min_hinge_y = min(g["_hinge_y"] for g in group)
+                max_hinge_y = max(g["_hinge_y"] for g in group)
+                span = max_hinge_y - min_hinge_y
+                def bot_off(hy):
+                    best = 0.0
+                    for jl in jamb_offsets:
+                        my = (jl["p1"][1] + jl["p2"][1]) / 2
+                        mx = (jl["p1"][0] + jl["p2"][0]) / 2
+                        if my < hy and abs(mx - group[0]["cx"]) < 300:
+                            best = max(best, hy - min(jl["p1"][1], jl["p2"][1]))
+                    return best
+                def top_off(hy):
+                    best = 0.0
+                    for jl in jamb_offsets:
+                        my = (jl["p1"][1] + jl["p2"][1]) / 2
+                        mx = (jl["p1"][0] + jl["p2"][0]) / 2
+                        if my > hy and abs(mx - group[0]["cx"]) < 300:
+                            best = max(best, max(jl["p1"][1], jl["p2"][1]) - hy)
+                    return best
+                bo = bot_off(min_hinge_y)
+                to_ = top_off(max_hinge_y)
+                if bo == 0 and to_ == 0:
+                    bo = to_ = leaf_w * 0.09
+                total_width = span + bo + to_
+
         merged.append({
-            "cx":    sum(g["cx"] for g in group) / len(group),
-            "cy":    sum(g["cy"] for g in group) / len(group),
-            "width": max(g["width"] for g in group),
-            "ori":   group[0]["ori"],
+            "cx":       sum(g["cx"] for g in group) / len(group),
+            "cy":       sum(g["cy"] for g in group) / len(group),
+            "width":    total_width,
+            "ori":      group[0]["ori"],
+            "_hinge_x": sum(g["_hinge_x"] for g in group) / len(group),
+            "_hinge_y": sum(g["_hinge_y"] for g in group) / len(group),
         })
     return merged
-
-
 def _cluster_points(points: list, gap_mm: float) -> list:
     if not points: return []
     clusters = []; used = [False]*len(points)
