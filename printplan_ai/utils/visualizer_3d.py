@@ -241,7 +241,7 @@ def build_3d_toolpath_webgl(
             z_resume = op.z_void_top_mm + op.lintel_thickness_mm
             wall_t = getattr(op, "wall_thickness_mm", None) or bead_width_mm
             # Find true wall centreline from toolpath geometry
-            true_cx, true_cy = _wall_centreline_for_opening(op, layers, op.z_void_bottom_mm)
+            true_cx, true_cy = _wall_centreline_for_opening(op, layers)
             if lt != "none":
                 lintel_blocks.append({
                     "cx": true_cx, "cy": true_cy,
