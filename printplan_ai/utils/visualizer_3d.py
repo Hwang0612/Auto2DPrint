@@ -174,41 +174,60 @@ def build_3d_toolpath_webgl(
         "precast": "#6b7280", "printed": "#1d4ed8",
     }
 
-    def _wall_centreline_for_opening(op, all_layers, z_below_void):
+    def _wall_centreline_for_opening(op, all_layers):
         """
-        Find the true wall centreline (perpendicular coord) at the opening location
-        by scanning print traces in layers BELOW the void (full-wall layers only).
-        For a horizontal wall: opening spans in X, perp axis = Y → return median Y of
-        nearby segment midpoints.
-        For a vertical wall: opening spans in Y, perp axis = X → return median X.
-        Falls back to op.cx/cy if nothing found.
+        Find the true wall centreline at the opening.
+
+        Strategy: collect midpoints of all print segments whose along-wall
+        coordinate falls inside the opening span. The perpendicular coords
+        will cluster around two values (the two parallel PDF wall lines).
+        Split into two clusters at the largest gap, average each cluster,
+        then take the midpoint of the two cluster centres — this equals the
+        midpoint of the two PDF wall-line centre-to-centre positions exactly.
+
+        For a horizontal wall: perp axis = Y  →  centre_Y = (c1_Y + c2_Y) / 2
+        For a vertical wall:   perp axis = X  →  centre_X = (c1_X + c2_X) / 2
         """
-        half_w = op.width_mm / 2.0 + 100.0   # search window along wall
+        # Search window: only segments whose along-wall coord is within the opening span
+        half_w = op.width_mm / 2.0 + 50.0
         perp_coords = []
+
         for layer in all_layers:
             if layer.z_mm >= op.z_void_bottom_mm:
-                break                          # only use full-wall layers
+                break                          # only full-wall layers (below void)
             for tr in layer.traces:
                 if tr.kind != "print":
                     continue
-                pts = tr.points
-                for i in range(len(pts) - 1):
-                    mx = (pts[i][0] + pts[i+1][0]) / 2
-                    my = (pts[i][1] + pts[i+1][1]) / 2
+                for i in range(len(tr.points) - 1):
+                    mx = (tr.points[i][0] + tr.points[i+1][0]) / 2
+                    my = (tr.points[i][1] + tr.points[i+1][1]) / 2
                     if op.wall_direction == "horizontal":
-                        # Opening along X: check mx near cx, collect my values
                         if abs(mx - op.cx_world_mm) <= half_w:
                             perp_coords.append(my)
                     else:
-                        # Opening along Y: check my near cy, collect mx values
                         if abs(my - op.cy_world_mm) <= half_w:
                             perp_coords.append(mx)
+
         if not perp_coords:
-            return op.cx_world_mm, op.cy_world_mm   # fallback
-        # The wall may have 2 parallel bead rows → cluster around the mean
-        perp_mean = sum(perp_coords) / len(perp_coords)
-        perp_coords_near = [v for v in perp_coords if abs(v - perp_mean) < 1000]
-        centre_perp = sum(perp_coords_near) / len(perp_coords_near) if perp_coords_near else perp_mean
+            return op.cx_world_mm, op.cy_world_mm   # fallback: use arc origin
+
+        # Cluster into two wall lines by finding the largest gap between
+        # sorted unique perpendicular values. Each cluster = one PDF wall line.
+        sorted_p = sorted(set(round(c, 0) for c in perp_coords))
+        if len(sorted_p) == 1:
+            centre_perp = sorted_p[0]
+        else:
+            # Find the index of the largest gap
+            gaps = [sorted_p[i+1] - sorted_p[i] for i in range(len(sorted_p) - 1)]
+            split_idx = gaps.index(max(gaps))
+            wall1 = sorted_p[:split_idx + 1]
+            wall2 = sorted_p[split_idx + 1:]
+            # Centre of each cluster = mean of its values
+            c1 = sum(wall1) / len(wall1)
+            c2 = sum(wall2) / len(wall2)
+            # Midpoint between the two PDF wall-line centres
+            centre_perp = (c1 + c2) / 2.0
+
         if op.wall_direction == "horizontal":
             return op.cx_world_mm, centre_perp
         else:
