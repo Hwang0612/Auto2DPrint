@@ -1,4 +1,4 @@
-"""PrintPlan AI — WebGL Interactive 3D Visualizer & Material Estimator."""
+"""PrintPlan AI ? WebGL Interactive 3D Visualizer & Material Estimator."""
 
 from __future__ import annotations
 import json
@@ -21,7 +21,7 @@ def _point_in_opening_xy(px: float, py: float, opening) -> bool:
     """
     Check whether a world-mm point (px, py) lies within the XY footprint
     of an opening.  Uses cx_world_mm / cy_world_mm stored by opening_detection
-    v3.0 — these are in the same coordinate system as the toolpath segments.
+    v3.0 ? these are in the same coordinate system as the toolpath segments.
     """
     half_w  = opening.width_mm / 2.0 + 50.0   # tolerance 50 mm
     perp    = 300.0 / 2.0 + 50.0              # assume 300 mm wall thickness + tolerance
@@ -54,7 +54,11 @@ def _segment_suppressed_at_z(
     mid_x = sum(p[0] for p in pts) / n
     mid_y = sum(p[1] for p in pts) / n
     for op in openings:
-        if op.z_void_bottom_mm <= z_mm < op.z_void_top_mm:
+        # Suppress the opening void AND the lintel zone above it.
+        # Above z_resume_mm the printer continues over the placed lintel,
+        # so those segments should be visible (full wall).
+        z_suppress_top = op.z_void_top_mm + op.lintel_thickness_mm  # = z_resume_mm
+        if op.z_void_bottom_mm <= z_mm < z_suppress_top:
             if _point_in_opening_xy(mid_x, mid_y, op):
                 return True
     return False
@@ -167,6 +171,35 @@ def build_3d_toolpath_webgl(
     segments_json  = json.dumps(js_segments)
     wireframe_mode = "true" if render_mode == "Wireframe Toolpath" else "false"
 
+    # Build lintel block data for the 3D scene
+    # Each entry: cx, cy (world mm), width_mm, wall_thickness_mm,
+    #             z_bottom_mm, z_top_mm, wall_dir, color_hex
+    LINTEL_COLORS = {
+        "timber":  "#92400e",   # warm brown
+        "steel":   "#64748b",   # slate
+        "precast": "#6b7280",   # grey
+        "printed": "#0e7490",   # teal
+        "none":    "#1e293b",   # hidden
+    }
+    WALL_THICKNESS_MM = 300.0   # approximate wall thickness for box depth
+    lintel_blocks = []
+    if openings:
+        for op in openings:
+            lt = op.lintel_type.value if hasattr(op.lintel_type, "value") else str(op.lintel_type)
+            if lt == "none":
+                continue
+            lintel_blocks.append({
+                "cx":  op.cx_world_mm,
+                "cy":  op.cy_world_mm,
+                "w":   op.width_mm,
+                "t":   WALL_THICKNESS_MM,
+                "z0":  op.z_void_top_mm,
+                "z1":  op.z_void_top_mm + op.lintel_thickness_mm,
+                "dir": op.wall_direction,
+                "col": LINTEL_COLORS.get(lt, "#92400e"),
+            })
+    lintels_json = json.dumps(lintel_blocks)
+
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;}}
@@ -184,6 +217,7 @@ canvas{{display:block;width:100%!important;height:100%!important;}}
 import * as THREE from 'three';
 import {{OrbitControls}} from 'three/addons/controls/OrbitControls.js';
 const SEGS={segments_json};
+const LINTELS={lintels_json};
 const BW={bead_width_mm},BH={layer_height_mm},WF={wireframe_mode};
 const CX={cx},CY={cy},MZ={max_z},SP={span},SC=1.0/SP;
 const renderer=new THREE.WebGLRenderer({{canvas:document.getElementById('c'),antialias:true}});
@@ -226,7 +260,7 @@ async function build(){{
   for(let si=0;si<SEGS.length;si++){{
     const seg=SEGS[si];if(seg.pts.length<2)continue;
     const z=seg.z*SC,travel=!seg.is_print;
-    const p3=seg.pts.map(([x,y])=>new THREE.Vector3((x-CX)*SC,z,-(y-CY)*SC));  // negate Y→Z so 3D north matches PDF orientation
+    const p3=seg.pts.map(([x,y])=>new THREE.Vector3((x-CX)*SC,z,-(y-CY)*SC));  // negate Y?Z so 3D north matches PDF orientation
     if(travel){{
       scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p3),new THREE.LineBasicMaterial({{color:0x475569,opacity:0.3,transparent:true}})));
     }}else{{
@@ -243,6 +277,36 @@ async function build(){{
   }}
   document.getElementById('loading').style.display='none';
 }}
+// -- Lintel blocks ---------------------------------------------------------
+// Render semi-transparent coloured boxes where lintels are placed.
+// These fill the zone between door/window head and concrete resumption,
+// making the full wall height visible in the 3D model.
+function addLintels(){{
+  for(const L of LINTELS){{
+    const wMM = L.w, tMM = L.t, hMM = L.z1 - L.z0;
+    const halfW=(wMM*SC)/2, halfT=(tMM*SC)/2, halfH=(hMM*SC)/2;
+    let geoW, geoD;
+    if(L.dir==='horizontal'){{ geoW=wMM*SC; geoD=tMM*SC; }}
+    else {{ geoW=tMM*SC; geoD=wMM*SC; }}
+    const geo=new THREE.BoxGeometry(geoW, hMM*SC, geoD);
+    const mat=new THREE.MeshStandardMaterial({{
+      color:new THREE.Color(L.col),
+      transparent:true, opacity:0.75,
+      roughness:0.8, metalness:0.1,
+    }});
+    const px=(L.cx-CX)*SC, py=(L.z0+hMM/2)*SC, pz=-(L.cy-CY)*SC;
+    const mesh=new THREE.Mesh(geo,mat);
+    mesh.position.set(px,py,pz);
+    scene.add(mesh);
+    const edges=new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({{color:0xfbbf24,opacity:0.6,transparent:true}})
+    );
+    edges.position.set(px,py,pz);
+    scene.add(edges);
+  }}
+}}
+addLintels();
 const ctrl=new OrbitControls(camera,renderer.domElement);
 ctrl.enableDamping=true;ctrl.dampingFactor=0.07;
 ctrl.target.set(0,(MZ*SC)/2,0);ctrl.minDistance=0.05;ctrl.maxDistance=8;ctrl.update();
@@ -409,7 +473,7 @@ def build_layer_2d_fig(layer: Layer, layer_idx: int, bbox: tuple) -> go.Figure:
         template="plotly_dark",
         paper_bgcolor="rgba(15,23,42,0.95)",
         plot_bgcolor="rgba(11,15,25,0.95)",
-        title=dict(text=f"Layer {layer_idx} (Z = {layer.z_mm:.1f} mm) — {layer.n_print_traces} Nozzle Trails", font=dict(color="#f8fafc", size=14)),
+        title=dict(text=f"Layer {layer_idx} (Z = {layer.z_mm:.1f} mm) ? {layer.n_print_traces} Nozzle Trails", font=dict(color="#f8fafc", size=14)),
         xaxis=dict(title=dict(text="X (mm)", font=dict(color="#f8fafc")), scaleanchor="y", scaleratio=1, gridcolor="rgba(148,163,184,0.2)", tickfont=dict(color="#f8fafc", size=11)),
         yaxis=dict(title=dict(text="Y (mm)", font=dict(color="#f8fafc")), gridcolor="rgba(148,163,184,0.2)", tickfont=dict(color="#f8fafc", size=11)),
         legend=dict(font=dict(color="#f8fafc", size=12), bgcolor="rgba(15,23,42,0.9)", bordercolor="rgba(56,189,248,0.4)", borderwidth=1),
