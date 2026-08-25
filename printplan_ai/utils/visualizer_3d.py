@@ -226,7 +226,7 @@ async function build(){{
   for(let si=0;si<SEGS.length;si++){{
     const seg=SEGS[si];if(seg.pts.length<2)continue;
     const z=seg.z*SC,travel=!seg.is_print;
-    const p3=seg.pts.map(([x,y])=>new THREE.Vector3((x-CX)*SC,z,(y-CY)*SC));
+    const p3=seg.pts.map(([x,y])=>new THREE.Vector3((x-CX)*SC,z,-(y-CY)*SC));  // negate Y→Z so 3D north matches PDF orientation
     if(travel){{
       scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p3),new THREE.LineBasicMaterial({{color:0x475569,opacity:0.3,transparent:true}})));
     }}else{{
