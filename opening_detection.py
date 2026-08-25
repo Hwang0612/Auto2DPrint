@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 opening_detection.py
 ====================
@@ -51,7 +50,7 @@ class LinteldType(Enum):
 # Gap size tolerance for arc-gap matching (pdfplumber fallback only)
 ARC_GAP_MATCH_TOLERANCE = 8.0   # pts
 # Two door arcs within this distance (mm) = same physical opening
-DOOR_MERGE_DIST_MM = 800.0
+DOOR_MERGE_DIST_MM = 1200.0
 
 
 # ---------------------------------------------------------------------------
@@ -269,16 +268,10 @@ class FloorPlanParser:
                 hx, hy   = to_world(hinge_pt.x, hinge_pt.y)
                 ex, ey   = to_world(end_pt.x, end_pt.y)
 
-                # -- Fix: door width ------------------------------------------
-                # For a standard 90deg door arc, chord = radius * sqrt2.
-                # The true door width equals the arc radius, so divide by sqrt2.
-                chord  = math.hypot(ex - hx, ey - hy)
-                leaf_w = chord / math.sqrt(2)
-
-                # -- Fix: opening centre & wall direction ---------------------
+                # -- Opening centre & wall direction --------------------------
                 # The physical hinge (arc pivot) is at the right-angle corner of
-                # the 90deg arc -- either (ex, hy) or (hx, ey).
-                # Choose the candidate closest to any jamb line.
+                # the arc -- either (ex, hy) or (hx, ey).
+                # Choose the candidate closest to any jamb line endpoint.
                 c1 = (ex, hy)
                 c2 = (hx, ey)
                 if jamb_lines:
@@ -296,11 +289,22 @@ class FloorPlanParser:
                 else:
                     arc_center = c1  # default
 
-                # Opening centre = midpoint of latch side and hinge side
+                # -- Door width = arc radius -----------------------------------
+                # distance(hinge_pt, arc_center) = true radius = door leaf width.
+                # This is more accurate than chord/sqrt(2) because it does NOT
+                # assume exactly 90 deg sweep -- it measures the true radius
+                # regardless of the arc angle used in the CAD symbol.
+                leaf_w = math.hypot(hx - arc_center[0], hy - arc_center[1])
+
+                # Sanity filter: skip arcs outside plausible door-width range
+                if not (600 <= leaf_w <= 1400):
+                    continue
+
+                # Opening centre = midpoint of hinge point and arc pivot
                 cx = (hx + arc_center[0]) / 2.0
                 cy = (hy + arc_center[1]) / 2.0
 
-                # Wall direction: wall runs along hinge->latch vector
+                # Wall direction: wall runs along hinge->arc_center vector
                 wall_dx = abs(hx - arc_center[0])
                 wall_dy = abs(hy - arc_center[1])
                 wall_dir_label = "horizontal" if wall_dx > wall_dy else "vertical"
@@ -711,7 +715,7 @@ class GCodeGenerator:
 
 def run_opening_detection_ui(pdf_path: str):
     import streamlit as st
-    st.subheader("🔧 Project Parameters")
+    st.subheader("? Project Parameters")
     col1, col2, col3 = st.columns(3)
     with col1:
         layer_h = st.number_input("Layer height (mm)", value=50, min_value=10, max_value=200, step=5)
@@ -736,7 +740,7 @@ def run_opening_detection_ui(pdf_path: str):
         window_head_height_mm = float(win_hh),
     )
 
-    st.subheader("📐 Opening Detection")
+    st.subheader("? Opening Detection")
     with st.spinner("Scanning floor plan for doors and windows..."):
         parser   = FloorPlanParser(pdf_path, config)
         openings = parser.detect_openings()
@@ -746,7 +750,7 @@ def run_opening_detection_ui(pdf_path: str):
         return [], config
 
     st.success(f"Detected {len(openings)} opening(s)")
-    st.subheader("📋 Detected Openings -- Review & Override")
+    st.subheader("? Detected Openings -- Review & Override")
 
     for op in openings:
         with st.expander(f"{op.opening_id} -- {op.opening_type.value.title()} | Width: {op.width_mm:.0f}mm | Wall: {op.wall_id}"):
