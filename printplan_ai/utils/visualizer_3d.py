@@ -173,25 +173,68 @@ def build_3d_toolpath_webgl(
         "timber": "#92400e", "steel": "#475569",
         "precast": "#6b7280", "printed": "#1d4ed8",
     }
-    WALL_DEPTH_MM = 600.0  # generous depth so blocks span full wall thickness
+
+    def _wall_centreline_for_opening(op, all_layers, z_below_void):
+        """
+        Find the true wall centreline (perpendicular coord) at the opening location
+        by scanning print traces in layers BELOW the void (full-wall layers only).
+        For a horizontal wall: opening spans in X, perp axis = Y → return median Y of
+        nearby segment midpoints.
+        For a vertical wall: opening spans in Y, perp axis = X → return median X.
+        Falls back to op.cx/cy if nothing found.
+        """
+        half_w = op.width_mm / 2.0 + 100.0   # search window along wall
+        perp_coords = []
+        for layer in all_layers:
+            if layer.z_mm >= op.z_void_bottom_mm:
+                break                          # only use full-wall layers
+            for tr in layer.traces:
+                if tr.kind != "print":
+                    continue
+                pts = tr.points
+                for i in range(len(pts) - 1):
+                    mx = (pts[i][0] + pts[i+1][0]) / 2
+                    my = (pts[i][1] + pts[i+1][1]) / 2
+                    if op.wall_direction == "horizontal":
+                        # Opening along X: check mx near cx, collect my values
+                        if abs(mx - op.cx_world_mm) <= half_w:
+                            perp_coords.append(my)
+                    else:
+                        # Opening along Y: check my near cy, collect mx values
+                        if abs(my - op.cy_world_mm) <= half_w:
+                            perp_coords.append(mx)
+        if not perp_coords:
+            return op.cx_world_mm, op.cy_world_mm   # fallback
+        # The wall may have 2 parallel bead rows → cluster around the mean
+        perp_mean = sum(perp_coords) / len(perp_coords)
+        perp_coords_near = [v for v in perp_coords if abs(v - perp_mean) < 1000]
+        centre_perp = sum(perp_coords_near) / len(perp_coords_near) if perp_coords_near else perp_mean
+        if op.wall_direction == "horizontal":
+            return op.cx_world_mm, centre_perp
+        else:
+            return centre_perp, op.cy_world_mm
+
     lintel_blocks = []
     cap_blocks = []
     if openings:
         for op in openings:
             lt = op.lintel_type.value if hasattr(op.lintel_type, "value") else str(op.lintel_type)
             z_resume = op.z_void_top_mm + op.lintel_thickness_mm
+            wall_t = getattr(op, "wall_thickness_mm", None) or bead_width_mm
+            # Find true wall centreline from toolpath geometry
+            true_cx, true_cy = _wall_centreline_for_opening(op, layers, op.z_void_bottom_mm)
             if lt != "none":
                 lintel_blocks.append({
-                    "cx": op.cx_world_mm, "cy": op.cy_world_mm,
-                    "w": op.width_mm, "t": WALL_DEPTH_MM,
+                    "cx": true_cx, "cy": true_cy,
+                    "w": op.width_mm, "t": wall_t,
                     "z0": op.z_void_top_mm, "z1": z_resume,
                     "dir": op.wall_direction,
                     "col": LINTEL_COLORS.get(lt, "#92400e"),
                 })
             if z_resume < max_z:
                 cap_blocks.append({
-                    "cx": op.cx_world_mm, "cy": op.cy_world_mm,
-                    "w": op.width_mm, "t": WALL_DEPTH_MM,
+                    "cx": true_cx, "cy": true_cy,
+                    "w": op.width_mm, "t": wall_t,
                     "z0": z_resume, "z1": max_z,
                     "dir": op.wall_direction,
                 })
@@ -283,15 +326,11 @@ async function build(){{
     const geo=new THREE.BoxGeometry(geoW,(hMM*SC),geoD);
     const mat=new THREE.MeshStandardMaterial({{color:new THREE.Color(color),roughness:0.7,metalness:0,transparent:opacity<1,opacity:opacity}});
     const mesh=new THREE.Mesh(geo,mat);
-    // cx/cy is inner wall face; centre the box on the wall by offsetting half-depth outward
-    const halfD=(tMM*SC)/2;
+    // cx/cy is the wall centreline — place box directly on it (no offset needed)
     let px=(cx-CX)*SC, pz=-(cy-CY)*SC;
-    if(dir==='horizontal'){{ pz+=halfD; }}
-    else{{ px+=halfD; }}
     mesh.position.set(px,((z0+hMM/2)*SC),pz);
     mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);
-    // wireframe edge
-    const wf=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({{color:0x000000,opacity:0.3,transparent:true}}));
+    const wf=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({{color:0x000000,opacity:0.4,transparent:true}}));
     wf.position.copy(mesh.position);scene.add(wf);
   }}
   for(const lb of LINTELS){{
